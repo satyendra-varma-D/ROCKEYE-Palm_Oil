@@ -5,7 +5,7 @@ import {
   LogOut, User, Building2, Factory, Ship, Shield, BarChart3,
   TrendingUp, AlertCircle, CheckCircle, Clock, ArrowRight, Eye,
   Boxes, FlaskConical, FileCheck, Anchor, CreditCard, Menu, X,
-  Activity, Upload, Download, Filter, RefreshCw, Leaf, Globe, Lock, Mail, ArrowLeft, Star, Edit, Trash2, Plus, Calendar, HelpCircle, Bookmark
+  Activity, Upload, Download, Filter, RefreshCw, Leaf, Globe, Lock, Mail, ArrowLeft, Star, Edit, Trash2, Plus, Calendar, HelpCircle, Bookmark, Send, Clipboard, ShieldCheck
 } from "lucide-react";
 import {
   AreaChart, Area, BarChart, Bar, XAxis, YAxis, CartesianGrid,
@@ -43,7 +43,7 @@ interface Contract {
   customer: string;
   pricing: string;
   terms: string;
-  status: "Draft" | "Pending" | "Approved" | "Rejected";
+  status: "Draft" | "Pending" | "Approved" | "Rejected" | "Pending Finance Approval" | "Pending Customer Approval";
   date: string;
 }
 
@@ -469,7 +469,7 @@ function NewKPICard({ label, value, sub, icon: Icon, color, trend = "↗ 12%" }:
 // Auth Layout wrapper
 function AuthSplit({ children, quote, quoteAuthor }: { children: React.ReactNode; quote: string; quoteAuthor: string }) {
   return (
-    <div className="min-h-screen flex" style={{ fontFamily: "'Plus Jakarta Sans', sans-serif" }}>
+    <div className="h-screen overflow-hidden flex" style={{ fontFamily: "'Plus Jakarta Sans', sans-serif" }}>
       <div className="hidden lg:flex lg:w-[55%] relative flex-col overflow-hidden bg-[#0f172a]">
         <img
           src="https://images.unsplash.com/photo-1432298026442-0eabd0a98870?w=1400&h=1800&fit=crop&auto=format"
@@ -638,7 +638,7 @@ export default function App() {
 
   if (screen === "role") {
     return (
-      <div className="min-h-screen bg-slate-50/50 flex flex-col justify-between py-12 px-6" style={{ fontFamily: "'Plus Jakarta Sans', sans-serif" }}>
+      <div className="h-screen overflow-y-auto bg-slate-50/50 flex flex-col justify-between py-12 px-6" style={{ fontFamily: "'Plus Jakarta Sans', sans-serif" }}>
         <div className="max-w-5xl mx-auto w-full space-y-8">
           <div className="text-center space-y-2">
             <div className="w-10 h-10 bg-blue-600 rounded-xl flex items-center justify-center mx-auto shadow-md">
@@ -685,11 +685,6 @@ export default function App() {
   }
 
   // ── Helper functions for workflows ──
-  const triggerApproveContract = (orderId: string) => {
-    setOrders(orders.map(o => o.id === orderId ? { ...o, status: "Approved" } : o));
-    setContracts(contracts.map(c => c.orderId === orderId ? { ...c, status: "Approved" } : c));
-  };
-
   const triggerCreateContract = (orderId: string) => {
     const o = orders.find(ord => ord.id === orderId);
     if (!o) return;
@@ -699,14 +694,28 @@ export default function App() {
       customer: o.customer,
       pricing: "MYR 4,150 / MT",
       terms: "LC at sight, FOB Sarawak Port",
-      status: "Pending",
+      status: "Draft",
       date: new Date().toISOString().split("T")[0],
     };
     setContracts([...contracts, newContract]);
     setOrders(orders.map(ord => ord.id === orderId ? { ...ord, contractId: newContract.id } : ord));
   };
 
-  const triggerCreateProductionPlan = (orderId: string) => {
+  const triggerSubmitContractToFinance = (orderId: string) => {
+    setContracts(contracts.map(c => c.orderId === orderId ? { ...c, status: "Pending Finance Approval" } : c));
+  };
+
+  const triggerSendContractToCustomer = (orderId: string) => {
+    setContracts(contracts.map(c => c.orderId === orderId ? { ...c, status: "Pending Customer Approval" } : c));
+  };
+
+  const triggerApproveContract = (orderId: string) => {
+    setOrders(orders.map(o => o.id === orderId ? { ...o, status: "Approved" } : o));
+    setContracts(contracts.map(c => c.orderId === orderId ? { ...c, status: "Approved" } : c));
+  };
+
+  // Production Planning: Material Stock & Availability Check
+  const triggerRunMaterialCheck = (orderId: string) => {
     const o = orders.find(ord => ord.id === orderId);
     if (!o) return;
     const newPlan: Plan = {
@@ -714,62 +723,53 @@ export default function App() {
       orderId: orderId,
       product: o.product,
       qty: o.qty,
-      plant: "Sarawak Refinery Plant B",
-      priority: "Medium",
-      scheduleDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split("T")[0],
-      status: "Scheduled",
+      plant: "Sarawak Refinery Plant A",
+      priority: "High",
+      scheduleDate: o.deliveryDate,
+      status: "Draft",
       vessel: "MV Sarawak Pearl",
       voyage: "SP-2026-08",
     };
     setPlans([...plans, newPlan]);
-    setOrders(orders.map(ord => ord.id === orderId ? { ...ord, status: "In Production", planId: newPlan.id } : ord));
+    setOrders(orders.map(ord => ord.id === orderId ? { ...ord, planId: newPlan.id } : ord));
+  };
 
+  // Production Planning: Approve Plan & Requisition Containers
+  const triggerApprovePlan = (orderId: string) => {
+    const o = orders.find(ord => ord.id === orderId);
+    if (!o) return;
+    // Approve plan
+    setPlans(plans.map(p => p.orderId === orderId ? { ...p, status: "Approved" } : p));
+    
+    // Automatically generate Raw Material PO in Draft status
     const newPO: PurchaseOrder = {
       id: `PO-2026-00${purchaseOrders.length + 1}`,
       orderId: orderId,
       supplier: "Borneo Agri-Seeds Corp",
-      material: "Crude Palm Oil (Raw)",
+      material: "Crude Palm Oil (Raw FFB)",
       qty: o.qty * 1.1,
-      status: "Ordered",
+      status: "Draft",
       date: new Date().toISOString().split("T")[0],
     };
     setPurchaseOrders([...purchaseOrders, newPO]);
   };
 
-  const triggerConfirmReceipt = (orderId: string) => {
+  // Production Planning: Confirm Liner Booking
+  const triggerConfirmLinerBooking = (orderId: string) => {
+    setPlans(plans.map(p => p.orderId === orderId ? { ...p, status: "Scheduled" } : p));
+  };
+
+  // Procurement: Generate PO (places order to supplier)
+  const triggerGeneratePO = (orderId: string) => {
+    setPurchaseOrders(purchaseOrders.map(po => po.orderId === orderId ? { ...po, status: "Ordered" } : po));
+  };
+
+  // Procurement: Receive FFB at Weighbridge
+  const triggerReceiveMaterials = (orderId: string) => {
     setPurchaseOrders(purchaseOrders.map(po => po.orderId === orderId ? { ...po, status: "Received" } : po));
   };
 
-  const triggerExecuteProduction = (orderId: string) => {
-    setPlans(plans.map(p => p.orderId === orderId ? { ...p, status: "Completed" } : p));
-  };
-
-  const triggerStuffContainer = (orderId: string) => {
-    const o = orders.find(ord => ord.id === orderId);
-    if (!o) return;
-    const newHaulage: Haulage = {
-      id: `HL-2026-00${haulages.length + 1}`,
-      orderId: orderId,
-      vessel: "MV Sarawak Pearl",
-      voyage: "SP-2026-08",
-      containerQty: Math.ceil(o.qty / 20),
-      allocatedQty: Math.ceil(o.qty / 20),
-      vehicleNo: "QAA 9982 C",
-      driverName: "Mohd Shukri",
-      status: "Allocated",
-    };
-    setHaulages([...haulages, newHaulage]);
-  };
-
-  const triggerDispatchHaulage = (orderId: string) => {
-    setHaulages(haulages.map(h => h.orderId === orderId ? { ...h, status: "Dispatched" } : h));
-  };
-
-  const triggerPortArrival = (orderId: string) => {
-    setHaulages(haulages.map(h => h.orderId === orderId ? { ...h, status: "Port Arrived" } : h));
-    setOrders(orders.map(o => o.id === orderId ? { ...o, status: "Shipped" } : o));
-  };
-
+  // QA Inspection & Certification
   const triggerQAInspection = (orderId: string) => {
     const o = orders.find(ord => ord.id === orderId);
     if (!o) return;
@@ -787,6 +787,37 @@ export default function App() {
     setInspections([...inspections, newQA]);
   };
 
+  // Production: Start Extraction & Refining
+  const triggerStartRefining = (orderId: string) => {
+    setPlans(plans.map(p => p.orderId === orderId ? { ...p, status: "In Progress" } : p));
+    setOrders(orders.map(o => o.id === orderId ? { ...o, status: "In Production" } : o));
+  };
+
+  // Production: Stuff Containers & Create Loading Ticket
+  const triggerStuffContainers = (orderId: string) => {
+    const o = orders.find(ord => ord.id === orderId);
+    if (!o) return;
+    const newHaulage: Haulage = {
+      id: `HL-2026-00${haulages.length + 1}`,
+      orderId: orderId,
+      vessel: "MV Sarawak Pearl",
+      voyage: "SP-2026-08",
+      containerQty: Math.ceil(o.qty / 20),
+      allocatedQty: Math.ceil(o.qty / 20),
+      vehicleNo: "QAA 9982 C",
+      driverName: "Mohd Shukri",
+      status: "Allocated",
+    };
+    setHaulages([...haulages, newHaulage]);
+  };
+
+  // Production: Dispatch Haulage to Port
+  const triggerDispatchHaulage = (orderId: string) => {
+    setHaulages(haulages.map(h => h.orderId === orderId ? { ...h, status: "Dispatched" } : h));
+    setOrders(orders.map(o => o.id === orderId ? { ...o, status: "Shipped" } : o));
+  };
+
+  // Export Doc: Prepare Customs, SI & Packing List
   const triggerGenerateExportDocs = (orderId: string) => {
     const newDoc: ExportDoc = {
       id: `DOC-2026-00${docs.length + 1}`,
@@ -794,7 +825,7 @@ export default function App() {
       siStatus: "Submitted",
       plStatus: "Generated",
       ciStatus: "Generated",
-      blStatus: "Released",
+      blStatus: "Pending", // Bill of lading starts as pending until payment is validated
       customsStatus: "Cleared",
       isComplete: true,
     };
@@ -805,14 +836,26 @@ export default function App() {
       id: `FV-2026-00${validations.length + 1}`,
       orderId: orderId,
       value: `MYR ${(o?.qty ?? 1000) * 4200}`,
-      status: "Validated",
+      status: "Pending",
       collected: false,
     };
     setValidations([...validations, newVal]);
   };
 
-  const triggerCollectPayment = (orderId: string) => {
+  // Finance: Validate Invoice Value
+  const triggerValidateInvoice = (orderId: string) => {
+    setValidations(validations.map(v => v.orderId === orderId ? { ...v, status: "Validated" } : v));
+  };
+
+  // Customer: Pay Invoice
+  const triggerPayInvoice = (orderId: string) => {
     setValidations(validations.map(v => v.orderId === orderId ? { ...v, collected: true } : v));
+  };
+
+  // Finance: Release Original BoL & Depart Vessel
+  const triggerReleaseBoL = (orderId: string) => {
+    setDocs(docs.map(d => d.orderId === orderId ? { ...d, blStatus: "Released" } : d));
+    setHaulages(haulages.map(h => h.orderId === orderId ? { ...h, status: "Completed" } : h));
     setOrders(orders.map(o => o.id === orderId ? { ...o, status: "Delivered" } : o));
   };
 
@@ -849,6 +892,8 @@ export default function App() {
       Approved: "bg-emerald-50 text-emerald-700 border-emerald-200",
       Pending: "bg-amber-50 text-amber-700 border-amber-200",
       Draft: "bg-slate-50 text-slate-600 border-slate-200",
+      "Pending Finance Approval": "bg-blue-50 text-blue-700 border-blue-200",
+      "Pending Customer Approval": "bg-indigo-50 text-indigo-700 border-indigo-200",
       "In Production": "bg-purple-50 text-purple-700 border-purple-200",
       Shipped: "bg-sky-50 text-sky-700 border-sky-200",
       Delivered: "bg-teal-50 text-teal-700 border-teal-200",
@@ -881,40 +926,143 @@ export default function App() {
     let nextActionLabel = null;
     let nextActionCallback = () => {};
 
-    if (selectedRole.id === "sales" && o.status === "Pending" && !contract) {
-      nextActionLabel = "Draft Sales Contract";
-      nextActionCallback = () => triggerCreateContract(o.id);
-    } else if (selectedRole.id === "sales" && contract && contract.status === "Pending") {
-      nextActionLabel = "Approve Contract";
-      nextActionCallback = () => triggerApproveContract(o.id);
-    } else if (selectedRole.id === "planning" && o.status === "Approved" && !plan) {
-      nextActionLabel = "Schedule Plan";
-      nextActionCallback = () => triggerCreateProductionPlan(o.id);
-    } else if (selectedRole.id === "procurement" && po && po.status === "Ordered") {
-      nextActionLabel = "Confirm Raw Material Receipt";
-      nextActionCallback = () => triggerConfirmReceipt(o.id);
-    } else if (selectedRole.id === "production" && plan && plan.status === "Scheduled") {
-      nextActionLabel = "Create Batch";
-      nextActionCallback = () => triggerExecuteProduction(o.id);
-    } else if (selectedRole.id === "production" && plan && plan.status === "Completed" && !haulage) {
-      nextActionLabel = "Stuff Containers";
-      nextActionCallback = () => triggerStuffContainer(o.id);
-    } else if (selectedRole.id === "qa" && plan && plan.status === "Completed" && !inspection) {
-      nextActionLabel = "Certify Quality";
-      nextActionCallback = () => triggerQAInspection(o.id);
-    } else if (selectedRole.id === "export" && inspection && inspection.status === "Approved" && !doc) {
-      nextActionLabel = "Generate Docs";
-      nextActionCallback = () => triggerGenerateExportDocs(o.id);
-    } else if (selectedRole.id === "logistics" && haulage && haulage.status === "Allocated") {
-      nextActionLabel = "Dispatch Haulage";
-      nextActionCallback = () => triggerDispatchHaulage(o.id);
-    } else if (selectedRole.id === "logistics" && haulage && haulage.status === "Dispatched") {
-      nextActionLabel = "Confirm Port Arrival";
-      nextActionCallback = () => triggerPortArrival(o.id);
-    } else if (selectedRole.id === "finance" && validation && !validation.collected) {
-      nextActionLabel = "Collect Payment";
-      nextActionCallback = () => triggerCollectPayment(o.id);
+    if (selectedRole.id === "sales") {
+      if (o.status === "Pending" && !contract) {
+        nextActionLabel = "Create Contract Requisition";
+        nextActionCallback = () => triggerCreateContract(o.id);
+      } else if (contract && contract.status === "Draft") {
+        nextActionLabel = "Submit Requisition to Finance";
+        nextActionCallback = () => triggerSubmitContractToFinance(o.id);
+      }
+    } else if (selectedRole.id === "finance") {
+      if (contract && contract.status === "Pending Finance Approval") {
+        nextActionLabel = "Review & Send to Customer";
+        nextActionCallback = () => triggerSendContractToCustomer(o.id);
+      } else if (validation && validation.status === "Pending") {
+        nextActionLabel = "Validate Invoice Value";
+        nextActionCallback = () => triggerValidateInvoice(o.id);
+      } else if (validation && validation.collected && doc && doc.blStatus === "Pending") {
+        nextActionLabel = "Release Original BoL & Depart Vessel";
+        nextActionCallback = () => triggerReleaseBoL(o.id);
+      }
+    } else if (selectedRole.id === "customer") {
+      if (contract && contract.status === "Pending Customer Approval") {
+        nextActionLabel = "Approve Sales Contract";
+        nextActionCallback = () => triggerApproveContract(o.id);
+      } else if (validation && validation.status === "Validated" && !validation.collected) {
+        nextActionLabel = "Pay Invoice & Submit Collection";
+        nextActionCallback = () => triggerPayInvoice(o.id);
+      }
+    } else if (selectedRole.id === "planning") {
+      if (o.status === "Approved" && !plan) {
+        nextActionLabel = "Run Material & Stock Check";
+        nextActionCallback = () => triggerRunMaterialCheck(o.id);
+      } else if (plan && plan.status === "Draft") {
+        nextActionLabel = "Approve Plan & Request Containers";
+        nextActionCallback = () => triggerApprovePlan(o.id);
+      } else if (plan && plan.status === "Approved") {
+        nextActionLabel = "Confirm Shipping Liner Booking";
+        nextActionCallback = () => triggerConfirmLinerBooking(o.id);
+      }
+    } else if (selectedRole.id === "procurement") {
+      if (po && po.status === "Draft") {
+        nextActionLabel = "Generate Purchase Order";
+        nextActionCallback = () => triggerGeneratePO(o.id);
+      } else if (po && po.status === "Ordered") {
+        nextActionLabel = "Weighbridge - Receive Materials";
+        nextActionCallback = () => triggerReceiveMaterials(o.id);
+      }
+    } else if (selectedRole.id === "qa") {
+      if (po && po.status === "Received" && !inspection) {
+        nextActionLabel = "Perform QA Inspection & Grant COA";
+        nextActionCallback = () => triggerQAInspection(o.id);
+      }
+    } else if (selectedRole.id === "production") {
+      if (inspection && inspection.status === "Approved" && plan && plan.status === "Scheduled") {
+        nextActionLabel = "Execute Extraction & Refining";
+        nextActionCallback = () => triggerStartRefining(o.id);
+      } else if (plan && plan.status === "In Progress" && !haulage) {
+        nextActionLabel = "Stuff Container & Create Loading Ticket";
+        nextActionCallback = () => triggerStuffContainers(o.id);
+      } else if (haulage && haulage.status === "Allocated") {
+        nextActionLabel = "Dispatch Haulage to Port";
+        nextActionCallback = () => triggerDispatchHaulage(o.id);
+      }
+    } else if (selectedRole.id === "export") {
+      if (haulage && haulage.status === "Dispatched" && !doc) {
+        nextActionLabel = "Prepare Customs, SI & Packing List";
+        nextActionCallback = () => triggerGenerateExportDocs(o.id);
+      }
     }
+
+    // Helper to get step status: 'completed' | 'active' | 'pending'
+    const getStepState = (stepIndex: number) => {
+      // 1. Order Placed
+      if (stepIndex === 1) return "completed";
+      
+      // 2. Sales Contract
+      if (stepIndex === 2) {
+        if (contract && contract.status === "Approved") return "completed";
+        if (contract) return "active";
+        return o.status === "Pending" ? "active" : "pending";
+      }
+
+      // 3. Prod Plan
+      if (stepIndex === 3) {
+        if (plan && (plan.status === "Scheduled" || plan.status === "In Progress" || plan.status === "Completed")) return "completed";
+        if (plan && plan.status === "Approved") return "completed";
+        if (plan) return "active";
+        if (contract && contract.status === "Approved") return "active";
+        return "pending";
+      }
+
+      // 4. Procurement PO
+      if (stepIndex === 4) {
+        if (po && po.status === "Received") return "completed";
+        if (po && po.status === "Ordered") return "active";
+        if (plan && (plan.status === "Scheduled" || plan.status === "Approved")) return "active";
+        return "pending";
+      }
+
+      // 5. QA Inspection
+      if (stepIndex === 5) {
+        if (inspection && inspection.status === "Approved") return "completed";
+        if (po && po.status === "Received") return "active";
+        return "pending";
+      }
+
+      // 6. Refining Production
+      if (stepIndex === 6) {
+        if (plan && (plan.status === "Completed" || (haulage && (haulage.status === "Allocated" || haulage.status === "Dispatched")))) return "completed";
+        if (plan && plan.status === "In Progress") return "active";
+        if (inspection && inspection.status === "Approved") return "active";
+        return "pending";
+      }
+
+      // 7. Loading Ticket Stuffing
+      if (stepIndex === 7) {
+        if (haulage && (haulage.status === "Dispatched" || haulage.status === "Port Arrived" || haulage.status === "Completed")) return "completed";
+        if (haulage && haulage.status === "Allocated") return "active";
+        if (plan && plan.status === "In Progress") return "active";
+        return "pending";
+      }
+
+      // 8. Export Docs Set
+      if (stepIndex === 8) {
+        if (doc && doc.isComplete) return "completed";
+        if (haulage && haulage.status === "Dispatched") return "active";
+        return "pending";
+      }
+
+      // 9. Payment & Original BoL
+      if (stepIndex === 9) {
+        if (validation && validation.collected && doc && doc.blStatus === "Released") return "completed";
+        if (validation) return "active";
+        return "pending";
+      }
+
+      return "pending";
+    };
 
     return (
       <div className="space-y-6 text-[#030213]" style={{ fontFamily: "'Plus Jakarta Sans', sans-serif" }}>
@@ -933,10 +1081,61 @@ export default function App() {
           <div className="flex items-center gap-2">
             <button className="px-4 py-2 border border-blue-600 text-blue-600 hover:bg-blue-50 text-xs font-bold rounded-lg transition">Edit</button>
             {nextActionLabel && (
-              <button onClick={() => { nextActionCallback(); }} className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-xs font-bold transition">
+              <button onClick={() => { nextActionCallback(); }} className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-xs font-bold transition animate-bounce">
                 {nextActionLabel}
               </button>
             )}
+          </div>
+        </div>
+
+        {/* Sarafiah Production & Documentation Workflow Progress Tracker */}
+        <div className="bg-white rounded-xl border border-slate-100 p-5 space-y-4">
+          <div className="flex items-center justify-between border-b border-slate-100 pb-2">
+            <h4 className="text-xs font-extrabold text-slate-800 uppercase tracking-wide flex items-center gap-1.5">
+              <Activity size={14} className="text-blue-600" /> Sarafiah Export Flow Progress Tracker
+            </h4>
+            <span className="text-[10px] bg-blue-50 text-blue-600 font-bold px-2 py-0.5 rounded">Active Role Workflow</span>
+          </div>
+
+          <div className="grid grid-cols-2 md:grid-cols-9 gap-4 relative">
+            {[
+              { label: "Order Placed", desc: "Customer Order", icon: ShoppingCart },
+              { label: "Sales Contract", desc: contract ? contract.status : "Waiting", icon: FileText },
+              { label: "Prod Plan", desc: plan ? plan.status : "Waiting", icon: Calendar },
+              { label: "Procure PO", desc: po ? po.status : "Waiting", icon: Clipboard },
+              { label: "QA Check", desc: inspection ? "COA Granted" : "Waiting", icon: ShieldCheck },
+              { label: "Production", desc: plan && plan.status === "In Progress" ? "Refining" : plan && plan.status === "Completed" ? "Completed" : "Waiting", icon: Factory },
+              { label: "Loading Ticket", desc: haulage ? haulage.status : "Waiting", icon: Truck },
+              { label: "Export Docs", desc: doc ? "Docs Sent" : "Waiting", icon: Send },
+              { label: "Payment & BoL", desc: validation?.collected ? "BoL Released" : validation ? "Validated Invoice" : "Waiting", icon: DollarSign },
+            ].map((step, idx) => {
+              const stepIdx = idx + 1;
+              const stepState = getStepState(stepIdx);
+              const StepIcon = step.icon;
+
+              let iconColor = "text-slate-300 bg-slate-50 border-slate-200";
+              let textColor = "text-slate-400";
+              
+              if (stepState === "completed") {
+                iconColor = "text-white bg-emerald-600 border-emerald-600 shadow-md shadow-emerald-100";
+                textColor = "text-emerald-700 font-bold";
+              } else if (stepState === "active") {
+                iconColor = "text-white bg-blue-600 border-blue-600 animate-pulse shadow-md shadow-blue-100";
+                textColor = "text-blue-700 font-extrabold";
+              }
+
+              return (
+                <div key={idx} className="flex flex-col items-center text-center space-y-2 relative group">
+                  <div className={`w-10 h-10 rounded-full border-2 flex items-center justify-center transition-all ${iconColor}`}>
+                    <StepIcon size={16} />
+                  </div>
+                  <div>
+                    <p className={`text-[11px] leading-tight font-semibold ${textColor}`}>{step.label}</p>
+                    <p className="text-[9px] text-slate-400 font-medium mt-0.5 whitespace-nowrap truncate max-w-[80px]">{step.desc}</p>
+                  </div>
+                </div>
+              );
+            })}
           </div>
         </div>
 
@@ -1042,6 +1241,84 @@ export default function App() {
                     <div className="flex justify-between">
                       <span className="text-slate-400 font-semibold">Total Turnaround Time</span>
                       <span className="font-semibold text-slate-600">48 Hours</span>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="bg-white rounded-xl border border-slate-100 p-5 space-y-3.5">
+                  <h4 className="text-xs font-extrabold text-slate-800 uppercase tracking-wide border-b border-slate-100 pb-2 flex items-center gap-1.5">
+                    <FileText size={14} className="text-blue-600" /> System Documents
+                  </h4>
+                  <div className="text-xs space-y-3">
+                    <div className="flex justify-between items-center pb-2 border-b border-slate-50">
+                      <span className="text-slate-400 font-semibold">Sales Contract</span>
+                      {contract ? (
+                        <div className="text-right">
+                          <span className="font-bold text-slate-700 block">{contract.id}</span>
+                          <span className="text-[9px] font-semibold text-emerald-600">{contract.status}</span>
+                        </div>
+                      ) : (
+                        <span className="text-slate-300 font-medium">Not Started</span>
+                      )}
+                    </div>
+
+                    <div className="flex justify-between items-center pb-2 border-b border-slate-50">
+                      <span className="text-slate-400 font-semibold">Supplier PO</span>
+                      {po ? (
+                        <div className="text-right">
+                          <span className="font-bold text-slate-700 block">{po.id}</span>
+                          <span className="text-[9px] font-semibold text-blue-600">{po.status}</span>
+                        </div>
+                      ) : (
+                        <span className="text-slate-300 font-medium">Awaiting planning</span>
+                      )}
+                    </div>
+
+                    <div className="flex justify-between items-center pb-2 border-b border-slate-50">
+                      <span className="text-slate-400 font-semibold">QA Certificates</span>
+                      {inspection ? (
+                        <div className="text-right space-y-0.5">
+                          <span className="text-[10px] font-bold text-emerald-600 block">✓ COA (Analysis Cert)</span>
+                          <span className="text-[10px] font-bold text-emerald-600 block">✓ Health Certificate</span>
+                        </div>
+                      ) : (
+                        <span className="text-slate-300 font-medium">Awaiting Inspection</span>
+                      )}
+                    </div>
+
+                    <div className="flex justify-between items-center pb-2 border-b border-slate-50">
+                      <span className="text-slate-400 font-semibold">Loading Ticket</span>
+                      {haulage ? (
+                        <div className="text-right">
+                          <span className="font-bold text-slate-700 block">{haulage.id}</span>
+                          <span className="text-[9px] font-medium text-slate-500">Stuffed: {haulage.vehicleNo}</span>
+                        </div>
+                      ) : (
+                        <span className="text-slate-300 font-medium">Awaiting Stuffing</span>
+                      )}
+                    </div>
+
+                    <div className="flex justify-between items-center pb-2 border-b border-slate-50">
+                      <span className="text-slate-400 font-semibold">Export Docs Set</span>
+                      {doc ? (
+                        <div className="text-right">
+                          <span className="text-[10px] font-bold text-blue-600 block">✓ Customs Declaration</span>
+                          <span className="text-[10px] font-bold text-blue-600 block">✓ Shipping Instructions</span>
+                        </div>
+                      ) : (
+                        <span className="text-slate-300 font-medium">Awaiting Dispatch</span>
+                      )}
+                    </div>
+
+                    <div className="flex justify-between items-center">
+                      <span className="text-slate-400 font-semibold">Bill of Lading</span>
+                      {validation?.collected && doc?.blStatus === "Released" ? (
+                        <span className="bg-emerald-50 border border-emerald-200 text-emerald-700 text-[10px] font-extrabold px-2 py-0.5 rounded">Released Original BoL</span>
+                      ) : doc ? (
+                        <span className="bg-yellow-50 border border-yellow-200 text-yellow-700 text-[10px] font-extrabold px-2 py-0.5 rounded">Unreleased Bill of Lading</span>
+                      ) : (
+                        <span className="text-slate-300 font-medium">Awaiting Docs</span>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -1700,7 +1977,7 @@ export default function App() {
   };
 
   return (
-    <div className="min-h-screen bg-[#f8fafc] flex flex-col text-slate-800" style={{ fontFamily: "'Plus Jakarta Sans', sans-serif" }}>
+    <div className="h-screen overflow-hidden bg-[#f8fafc] flex flex-col text-slate-800" style={{ fontFamily: "'Plus Jakarta Sans', sans-serif" }}>
       {/* Header bar */}
       <header className="h-14 bg-white border-b border-slate-100 flex items-center px-5 justify-between z-20 sticky top-0">
         <div className="flex items-center gap-3">
